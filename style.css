@@ -1,0 +1,10 @@
+/* styles.css - optional UI polish */
+body {
+  background: linear-gradient(180deg, #f3fbff, #e9f7f0);
+}
+.stApp {
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+}
+h1 {
+  color: #1b7fbd;
+}
