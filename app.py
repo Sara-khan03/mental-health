@@ -7,7 +7,6 @@ import os
 import sqlite3
 from datetime import datetime, date
 import textwrap
-
 import streamlit as st
 from textblob import TextBlob
 import openai
@@ -215,7 +214,7 @@ with tabs[1]:
                     bot_reply += ("\n\n⚠️ I detect serious distress. If you are in danger please contact local emergency services or the nearest helpline now. "
                                   "In India, you may call 9152987821 (Vandrevala) or 080-256-XXXX for campus support.")
                 save_chat("bot", bot_reply, analyze_sentiment(bot_reply))
-               st.rerun()
+                st.rerun()
 
 
     with col2:
@@ -317,4 +316,5 @@ with tabs[4]:
 # Footer / note
 st.markdown("---")
 st.caption("Prototype for demo only — this is not a clinical tool. For real emergencies contact local services.")
+
 
