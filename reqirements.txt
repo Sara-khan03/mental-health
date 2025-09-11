@@ -1,22 +1,14 @@
-# Core App Framework
 streamlit
-
-# Sentiment Analysis & NLP
+openai
 textblob
 nltk
-
-# Data Handling
 pandas
 numpy
-
-# Visualization
 matplotlib
 seaborn
 plotly
-
-# Machine Learning (if needed later)
 scikit-learn
-
-# Optional (for better UI/UX, wordclouds, etc.)
 wordcloud
+
+
 
