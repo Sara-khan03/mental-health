@@ -144,54 +144,70 @@ tabs = st.tabs(["Chatbot", "Mood Tracker", "Resources & Connect"])
 # ---------------------------
 # Tab: Chatbot
 # ---------------------------
-with tabs[0]:
-    st.header("Chat with MindCare")
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+import streamlit as st
 
-    # show chat
-    for msg in st.session_state.chat_history:
-        role = msg["role"]
-        content = msg["text"]
-        if role == "user":
-            st.markdown(f"**You:** {content}")
-        else:
-            st.markdown(f"**Bot:** {content}")
+# Optional: OpenAI for dynamic responses
+try:
+    import openai
+    openai.api_key = st.secrets.get("OPENAI_API_KEY", None)
+except ImportError:
+    openai = None
 
-    user_msg = st.text_area("Type your message (be honest) — we detect risk words", height=120)
-    col1, col2 = st.columns([1,1])
-    with col1:
-        if st.button("Send"):
-            if not user_msg.strip():
-                st.warning("Please type something")
-            else:
-                sentiment = analyze_sentiment(user_msg)
-                is_crisis = detect_crisis(user_msg, sentiment)
-                log_event("chat", user_msg, sentiment, is_crisis)
-                st.session_state.chat_history.append({"role":"user","text":user_msg})
-                # decide reply
-                reply = ""
-                # If OpenAI key present, use model (optional)
-                if openai_key and openai:
-                    try:
-                        openai.api_key = openai_key
-                        resp = openai.ChatCompletion.create(
-                            model="gpt-3.5-turbo",
-                            messages=[{"role":"system","content":"You are a supportive mental health assistant."},
-                                      {"role":"user","content":user_msg}],
-                            max_tokens=300
-                        )
-                        reply = resp.choices[0].message.content.strip()
-                    except Exception as e:
-                        reply = "Sorry, AI service unavailable. Try the self-care tools or resources."
-                else:
-                    # simple empathetic fallback
-                    if sentiment > 0.2:
-                        reply = "I'm glad you're doing okay. Tell me more if you'd like."
-                    elif sentiment < -0.2:
-                        reply = "I hear you — that sounds really difficult. Would you like breathing guidance or to contact help?"
-                    else:
-                        reply = "Thanks for sharing. Small steps can help — would you like a short exercise?"
+
+# --- Chatbot logic ---
+def get_ai_response(user_input: str) -> str:
+    """Uses OpenAI if key exists, otherwise falls back to rule-based."""
+    if openai and openai.api_key:
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a kind, empathetic digital mental health assistant. Provide supportive but non-medical advice."},
+                    {"role": "user", "content": user_input}
+                ],
+                max_tokens=150,
+                temperature=0.7
+            )
+            return response.choices[0].message["content"].strip()
+        except Exception as e:
+            return f"(AI unavailable, fallback engaged: {e})\n" + rule_based_chat(user_input)
+    else:
+        return rule_based_chat(user_input)
+
+
+def rule_based_chat(user_input: str) -> str:
+    """Smarter fallback chatbot when OpenAI is unavailable."""
+    text = user_input.lower()
+    if "stress" in text or "anxious" in text:
+        return "I hear you're feeling stressed. 🌱 Want me to guide you through a 2-minute breathing exercise?"
+    elif "sad" in text or "depressed" in text:
+        return "I'm really sorry you’re feeling this way 💙. Talking helps — would you like some positive activities or helpline info?"
+    elif "angry" in text:
+        return "Anger is natural, but it can overwhelm us. 💡 Want me to suggest some quick grounding techniques?"
+    elif "lonely" in text:
+        return "Feeling lonely can be really hard 😔. Do you want me to share some safe online communities and activities?"
+    else:
+        return "Thanks for sharing. Small steps can help — would you like me to suggest a simple mental health exercise?"
+
+
+# --- Streamlit UI ---
+st.title("💬 Mental Health Support Chatbot")
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+user_input = st.text_input("How are you feeling today?")
+
+if st.button("Send"):
+    if user_input.strip():
+        bot_reply = get_ai_response(user_input)
+        st.session_state.chat_history.append(("You", user_input))
+        st.session_state.chat_history.append(("Bot", bot_reply))
+        st.rerun()
+
+# Display chat history
+for role, msg in st.session_state.chat_history:
+    st.write(f"**{role}:** {msg}")
 
                 # append and show
                 st.session_state.chat_history.append({"role":"bot","text":reply})
@@ -322,5 +338,6 @@ with tabs[2]:
 # Footer
 st.markdown("---")
 st.caption("Demo prototype for educational use. Not a substitute for professional care.")
+
 
 
