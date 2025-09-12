@@ -195,7 +195,7 @@ with tabs[0]:
 
                 # append and show
                 st.session_state.chat_history.append({"role":"bot","text":reply})
-                st.experimental_rerun()  # re-render to show updated chat
+                st.rerun()  # re-render to show updated chat
 
     with col2:
         st.markdown("### Quick actions")
@@ -322,4 +322,5 @@ with tabs[2]:
 # Footer
 st.markdown("---")
 st.caption("Demo prototype for educational use. Not a substitute for professional care.")
+
 
