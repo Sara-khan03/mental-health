@@ -27,6 +27,43 @@ st.sidebar.info("🌍 **About this App**\n\nA supportive chatbot prototype for m
 st.sidebar.markdown("---")
 st.sidebar.error("🚨 **Emergency?**\n\nIf you’re in crisis, please call your local helpline immediately.")
 
+
+# ---- Mood Tracker ----
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+if "mood_log" not in st.session_state:
+    st.session_state["mood_log"] = []
+
+st.sidebar.header("📝 Mood Tracker")
+
+# Mood options
+mood = st.sidebar.radio(
+    "How are you feeling today?",
+    ["😊 Happy", "😐 Neutral", "😢 Sad", "😡 Angry"]
+)
+
+if st.sidebar.button("Log Mood"):
+    st.session_state["mood_log"].append(
+        {"date": datetime.now().strftime("%Y-%m-%d %H:%M"), "mood": mood}
+    )
+    st.sidebar.success("Mood logged successfully ✅")
+
+# Show mood history
+if st.session_state["mood_log"]:
+    df = pd.DataFrame(st.session_state["mood_log"])
+    st.subheader("📊 Mood History")
+    st.dataframe(df)
+
+    # Plot mood counts
+    st.subheader("📈 Mood Chart")
+    fig, ax = plt.subplots()
+    df["mood"].value_counts().plot(kind="bar", ax=ax, color="seagreen")
+    ax.set_ylabel("Frequency")
+    ax.set_xlabel("Mood")
+    st.pyplot(fig)
+
 # ==============================
 # Main Layout with Tabs
 # ==============================
@@ -94,3 +131,4 @@ with tabs[2]:
     - 📞 [Find a Helpline](https://findahelpline.com/)
     - 📖 Self-care tips: Take breaks, stay active, talk to someone you trust.
     """)
+
