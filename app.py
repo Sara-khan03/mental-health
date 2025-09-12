@@ -213,13 +213,6 @@ for role, msg in st.session_state.chat_history:
 st.session_state.chat_history.append({"role":"bot","text":reply})
 st.rerun()  # re-render to show updated chat
 
- with col2:
- st.markdown("### Quick actions")
-     if st.button("Short breathing exercise"):
-            st.success("Try: Inhale 4s — Hold 4s — Exhale 6s — Repeat 6 times.")
-     if st.button("Report urgent content"):
-            st.info("If this is urgent, use the Emergency box below or call helplines.")
-
     # If last message was crisis, show emergency card
     # We inspect last logged event:
     cur.execute("SELECT detail, sentiment, is_crisis, ts FROM events ORDER BY id DESC LIMIT 1")
@@ -338,6 +331,7 @@ with tabs[2]:
 # Footer
 st.markdown("---")
 st.caption("Demo prototype for educational use. Not a substitute for professional care.")
+
 
 
 
