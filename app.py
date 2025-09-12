@@ -212,39 +212,6 @@ for role, msg in st.session_state.chat_history:
 # append and show
 st.session_state.chat_history.append({"role":"bot","text":reply})
 st.rerun()  # re-render to show updated chat
-
-    # If last message was crisis, show emergency card
-    # We inspect last logged event:
-    cur.execute("SELECT detail, sentiment, is_crisis, ts FROM events ORDER BY id DESC LIMIT 1")
-    last = cur.fetchone()
-    if last:
-        last_detail, last_sent, last_is_crisis, last_ts = last
-        if last_is_crisis:
-            st.markdown("## ⚠️ Immediate help recommended")
-            st.error("We detected words or sentiment indicating high distress. Please consider the options below:")
-            # show helplines
-            st.markdown("- **Call local emergency/helpline now**")
-            st.markdown("- **Trusted contact**: call or message them if you want (enter contact in sidebar)")
-            if trusted_phone:
-                st.markdown(f"[Call trusted contact] (tel:{trusted_phone})")
-            if trusted_email:
-                st.markdown(f"[Email trusted contact] (mailto:{trusted_email}?subject=Urgent%20Help&body=Please%20contact%20me%20ASAP.)")
-
-            # option: send email to trusted contact if provided
-            if trusted_email and st.button("Send Alert Email to Trusted Contact (with summary)"):
-                summary = f"Automatic alert from MindCare prototype.\n\nMessage: {last_detail}\nSentiment: {last_sent}\nTime: {last_ts}\n\nPlease reach out to this person immediately."
-                ok, msg = send_email_via_smtp(trusted_email, "MindCare Alert: Please check on your contact", summary)
-                if ok:
-                    st.success("Alert sent to trusted contact (via configured SMTP).")
-                else:
-                    st.warning(f"Could not send email: {msg}")
-
-            # direct helpline links (India examples + global)
-            st.markdown("**Immediate helplines**")
-            st.markdown("- Vandrevala: 9152987821")
-            st.markdown("- iCall: 9152987821")
-            st.markdown("- International: see https://www.opencounseling.com/suicide-hotlines")
-
 # ---------------------------
 # Tab: Mood Tracker
 # ---------------------------
@@ -331,6 +298,7 @@ with tabs[2]:
 # Footer
 st.markdown("---")
 st.caption("Demo prototype for educational use. Not a substitute for professional care.")
+
 
 
 
