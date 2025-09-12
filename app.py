@@ -209,9 +209,9 @@ if st.button("Send"):
 for role, msg in st.session_state.chat_history:
     st.write(f"**{role}:** {msg}")
 
-                # append and show
-                st.session_state.chat_history.append({"role":"bot","text":reply})
-                st.rerun()  # re-render to show updated chat
+# append and show
+st.session_state.chat_history.append({"role":"bot","text":reply})
+st.rerun()  # re-render to show updated chat
 
     with col2:
         st.markdown("### Quick actions")
@@ -338,6 +338,7 @@ with tabs[2]:
 # Footer
 st.markdown("---")
 st.caption("Demo prototype for educational use. Not a substitute for professional care.")
+
 
 
 
