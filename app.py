@@ -2,44 +2,51 @@
 # MindCare prototype - Chatbot + Mood Tracker + Crisis Detection + Connect to Professionals
 # Run: python -m streamlit run app.py
 
+# app.py
+# Streamlit prototype: Digital Mental Health MVP
+# Run: pip install -r requirements.txt
+#      streamlit run app.py
+
+
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date
+import textwrap
 import streamlit as st
 from textblob import TextBlob
-import pandas as pd
+import openai
 import plotly.express as px
-import smtplib
-from email.message import EmailMessage
+import pandas as pd
 
-# Optional OpenAI usage (only if configured)
-try:
-    import openai
-except Exception:
-    openai = None
+# -------------------------
+# Config / DB helpers
+# -------------------------
+DB_PATH = "mh_data.db"
 
-# ---------------------------
-# Config & DB
-# ---------------------------
-st.set_page_config(page_title="MindCare — Safer Prototype", layout="wide", page_icon="🧠")
-
-DB_PATH = "mindcare.db"
 def init_db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     cur = conn.cursor()
-    cur.execute("""CREATE TABLE IF NOT EXISTS events (
+    # chats: id, role ('user'/'bot'), text, sentiment, ts
+    cur.execute("""CREATE TABLE IF NOT EXISTS chats (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    type TEXT,
-                    detail TEXT,
+                    role TEXT,
+                    text TEXT,
                     sentiment REAL,
-                    is_crisis INTEGER,
                     ts TEXT
                 )""")
+    # moods: id, mood_label, score (-2..2), note, ts
     cur.execute("""CREATE TABLE IF NOT EXISTS moods (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     mood_label TEXT,
                     score INTEGER,
                     note TEXT,
+                    ts TEXT
+                )""")
+    # points (wellness gamification)
+    cur.execute("""CREATE TABLE IF NOT EXISTS points (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reason TEXT,
+                    points INTEGER,
                     ts TEXT
                 )""")
     conn.commit()
@@ -48,17 +55,54 @@ def init_db():
 conn = init_db()
 cur = conn.cursor()
 
-# ---------------------------
+# -------------------------
 # Utilities
-# ---------------------------
-CRISIS_KEYWORDS = [
-    "suicide", "kill myself", "end my life", "want to die", "hurtd myself", "die", "i can't go on",
-    "i'll kill myself", "killme", "i want to end"
-]
+# -------------------------
+def save_chat(role, text, sentiment):
+    ts = datetime.utcnow().isoformat()
+    cur.execute("INSERT INTO chats (role, text, sentiment, ts) VALUES (?, ?, ?, ?)",
+                (role, text[:2000], sentiment, ts))
+    conn.commit()
+
+def get_chats(limit=200):
+    cur.execute("SELECT role, text, sentiment, ts FROM chats ORDER BY id DESC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    return [{"role": r[0], "text": r[1], "sentiment": r[2], "ts": r[3]} for r in rows][::-1]
+
+def save_mood(label, score, note=""):
+    ts = datetime.utcnow().isoformat()
+    cur.execute("INSERT INTO moods (mood_label, score, note, ts) VALUES (?, ?, ?, ?)",
+                (label, score, note[:1000], ts))
+    conn.commit()
+
+def get_moods():
+    cur.execute("SELECT mood_label, score, note, ts FROM moods ORDER BY id ASC")
+    rows = cur.fetchall()
+    return [{"mood":r[0], "score":r[1], "note":r[2], "ts":r[3]} for r in rows]
+
+def add_points(reason, pts):
+    ts = datetime.utcnow().isoformat()
+    cur.execute("INSERT INTO points (reason, points, ts) VALUES (?, ?, ?)", (reason, pts, ts))
+    conn.commit()
+
+def get_points_total():
+    cur.execute("SELECT SUM(points) FROM points")
+    s = cur.fetchone()[0]
+    return int(s or 0)
+
+# -------------------------
+# Chatbot: OpenAI or fallback
+# -------------------------
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+if OPENAI_KEY:
+    openai.api_key = OPENAI_KEY
+
+CRISIS_KEYWORDS = ["suicide", "kill myself", "end my life", "hurt myself", "want to die", "can't go on", "killme"]
 
 def analyze_sentiment(text: str):
     try:
-        return round(TextBlob(text).sentiment.polarity, 3)
+        blob = TextBlob(text)
+        return round(blob.sentiment.polarity, 3)
     except Exception:
         return 0.0
 
@@ -70,238 +114,210 @@ def detect_crisis(text: str, sentiment: float):
         return True
     return False
 
-def log_event(event_type, detail, sentiment, is_crisis):
-    ts = datetime.utcnow().isoformat()
-    cur.execute("INSERT INTO events (type, detail, sentiment, is_crisis, ts) VALUES (?, ?, ?, ?, ?)",
-                (event_type, detail[:2000], sentiment, int(bool(is_crisis)), ts))
-    conn.commit()
+def generate_bot_reply(user_text: str):
+    # Primary: OpenAI (if key set)
+    if OPENAI_KEY:
+        try:
+            prompt_system = ("You are a supportive, empathetic mental health assistant for students. "
+                             "Use short, clear sentences. If the user expresses self-harm intent, provide crisis resources and advise to contact emergency help.")
+            messages = [
+                {"role":"system","content":prompt_system},
+                {"role":"user","content":user_text}
+            ]
+            resp = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages, max_tokens=300, temperature=0.7)
+            reply = resp.choices[0].message.content.strip()
+            return reply
+        except Exception as e:
+            # fallback to rule-based
+            pass
 
-def save_mood(label, score, note=""):
-    ts = datetime.utcnow().isoformat()
-    cur.execute("INSERT INTO moods (mood_label, score, note, ts) VALUES (?, ?, ?, ?)",
-                (label, score, note[:1000], ts))
-    conn.commit()
+    # Fallback rule-based empathetic reply
+    txt = user_text.lower()
+    if any(k in txt for k in ["stress","stressed","anxious","anxiety","panic"]):
+        return ("I'm sorry you're feeling stressed — that sounds tough. "
+                "Would you like a short breathing exercise or some tips to handle an upcoming deadline?")
+    if any(k in txt for k in ["sad","depressed","down","hopeless"]):
+        return ("I hear you. Feeling low is valid. Can you tell me one small thing that felt okay today?")
+    if any(k in txt for k in ["sleep","insomnia","can't sleep","tired"]):
+        return ("Sleep problems can make everything harder. Try a 4-4-4 breathing before bed and reduce screen time an hour before sleep.")
+    return ("Thanks for sharing. Tell me more, or choose 'Self-care' for exercises that may help right now.")
 
-def get_moods_df():
-    df = pd.read_sql_query("SELECT * FROM moods ORDER BY id ASC", conn)
-    return df
+# -------------------------
+# Streamlit UI
+# -------------------------
+st.set_page_config(page_title="MindCare MVP", layout="wide", page_icon="🧠")
+st.markdown("<style>footer{visibility:hidden;} </style>", unsafe_allow_html=True)
 
-# ---------------------------
-# Optional: SMTP send (only if configured)
-# Store SMTP config in Streamlit secrets or environment variables
-# ---------------------------
-def send_email_via_smtp(to_email, subject, body):
-    # Use Streamlit secrets if available
-    smtp_host = st.secrets.get("smtp_host") if "smtp_host" in st.secrets else os.getenv("SMTP_HOST")
-    smtp_port = int(st.secrets.get("smtp_port")) if "smtp_port" in st.secrets else int(os.getenv("SMTP_PORT") or 587)
-    smtp_user = st.secrets.get("smtp_user") if "smtp_user" in st.secrets else os.getenv("SMTP_USER")
-    smtp_pass = st.secrets.get("smtp_pass") if "smtp_pass" in st.secrets else os.getenv("SMTP_PASS")
-    from_addr = smtp_user
-    if not smtp_host or not smtp_user or not smtp_pass:
-        return False, "SMTP not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS in environment or Streamlit secrets."
-    try:
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = from_addr
-        msg["To"] = to_email
-        msg.set_content(body)
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
-        return True, "Email sent"
-    except Exception as e:
-        return False, str(e)
-
-# ---------------------------
-# App UI
-# ---------------------------
-# basic CSS load (if exists)
-if os.path.exists("style.css"):
-    with open("style.css") as f:
+# attempt to load external css if present
+if os.path.exists("styles.css"):
+    with open("styles.css") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# Sidebar
-st.sidebar.title("⚙️ Prototype Controls")
-openai_key = st.sidebar.text_input("OpenAI API key (optional)", type="password")
-st.sidebar.markdown("---")
-st.sidebar.info("This prototype is not a medical tool. In emergency, call local services.")
-st.sidebar.markdown("**Emergency Helplines (India)**\n- Vandrevala: 9152987821\n- iCALL: 9152987821\n\n**Global**: 988 (where applicable)")
+st.title("MindCare — Digital Mental Health (Prototype)")
+st.markdown("Calm demo of chatbot, mood tracker, self-care and dashboard (MVP).")
 
-# Quick emergency contact form (optional)
-st.sidebar.markdown("---")
-st.sidebar.subheader("Emergency contact (optional)")
-trusted_name = st.sidebar.text_input("Trusted contact name", "")
-trusted_phone = st.sidebar.text_input("Trusted contact phone (with country code)", "")
-trusted_email = st.sidebar.text_input("Trusted contact email", "")
-
-# Main layout
-st.title("MindCare — Safer Prototype")
-st.subheader("Chatbot • Mood Tracker • Crisis detection • Connect to professionals")
-
-tabs = st.tabs(["Chatbot", "Mood Tracker", "Resources & Connect"])
-
-# ---------------------------
-# Tab: Chatbot
-# ---------------------------
-import streamlit as st
-
-# Optional: OpenAI for dynamic responses
-try:
-    import openai
-    openai.api_key = st.secrets.get("OPENAI_API_KEY", None)
-except ImportError:
-    openai = None
-
-
-# --- Chatbot logic ---
-def get_ai_response(user_input: str) -> str:
-    """Uses OpenAI if key exists, otherwise falls back to rule-based."""
-    if openai and openai.api_key:
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a kind, empathetic digital mental health assistant. Provide supportive but non-medical advice."},
-                    {"role": "user", "content": user_input}
-                ],
-                max_tokens=150,
-                temperature=0.7
-            )
-            return response.choices[0].message["content"].strip()
-        except Exception as e:
-            return f"(AI unavailable, fallback engaged: {e})\n" + rule_based_chat(user_input)
+# Layout: sidebar for navigation / meta
+with st.sidebar:
+    st.header("Prototype Controls")
+    if OPENAI_KEY:
+        st.success("OpenAI available — chatbot powered by GPT")
     else:
-        return rule_based_chat(user_input)
+        st.info("No OpenAI key — using fallback rule-based chatbot")
+    st.markdown("---")
+    if st.button("Reset all data (DB)"):
+        conn.close()
+        if os.path.exists(DB_PATH):
+            os.remove(DB_PATH)
+        st.experimental_rerun()
+    st.markdown("**Wellness points:** " + str(get_points_total()))
 
+tabs = st.tabs(["Home", "Chatbot", "Mood Tracker", "Self-care", "Dashboard"])
 
-def rule_based_chat(user_input: str) -> str:
-    """Smarter fallback chatbot when OpenAI is unavailable."""
-    text = user_input.lower()
-    if "stress" in text or "anxious" in text:
-        return "I hear you're feeling stressed. 🌱 Want me to guide you through a 2-minute breathing exercise?"
-    elif "sad" in text or "depressed" in text:
-        return "I'm really sorry you’re feeling this way 💙. Talking helps — would you like some positive activities or helpline info?"
-    elif "angry" in text:
-        return "Anger is natural, but it can overwhelm us. 💡 Want me to suggest some quick grounding techniques?"
-    elif "lonely" in text:
-        return "Feeling lonely can be really hard 😔. Do you want me to share some safe online communities and activities?"
-    else:
-        return "Thanks for sharing. Small steps can help — would you like me to suggest a simple mental health exercise?"
+# -------------------------
+# Home tab
+# -------------------------
+with tabs[0]:
+    st.header("Welcome")
+    st.markdown("""
+    **MindCare (MVP)** helps students log mood, get instant empathetic chat support, and track well-being.
+    *This prototype is for demo & hackathon use — not a substitute for professional medical care.*
+    """)
+    st.info("Tip: Use the Chatbot tab to test conversation. Log moods in Mood Tracker. See trends in Dashboard.")
 
-
-# --- Streamlit UI ---
-st.title("💬 Mental Health Support Chatbot")
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-user_input = st.text_input("How are you feeling today?")
-
-if st.button("Send"):
-    if user_input.strip():
-        bot_reply = get_ai_response(user_input)
-        st.session_state.chat_history.append(("You", user_input))
-        st.session_state.chat_history.append(("Bot", bot_reply))
-        st.rerun()
-
-# Display chat history
-for role, msg in st.session_state.chat_history:
-    st.write(f"**{role}:** {msg}")
-
-# append and show
-st.session_state.chat_history.append({"role":"bot","text":reply})
-st.rerun()  # re-render to show updated chat
-# ---------------------------
-# Tab: Mood Tracker
-# ---------------------------
+# -------------------------
+# Chatbot tab
+# -------------------------
 with tabs[1]:
-    st.header("Mood Tracker — track & share progress")
-    # simple mood log
-    if "mood_log" not in st.session_state:
-        st.session_state["mood_log"] = []
+    st.header("Chat with MindCare Bot 🤖")
+    st.markdown("Share how you feel or ask for coping strategies. Crisis detection is enabled.")
 
-    colA, colB = st.columns([3,1])
+    # load previous chat
+    chats = get_chats(200)
+    if chats:
+        for m in chats[-20:]:
+            role = m["role"]
+            sentiment = m["sentiment"]
+            ts = m["ts"][:19].replace("T"," ")
+            if role == "user":
+                st.markdown(f"**You ({ts})**: {m['text']}")
+            else:
+                st.markdown(f"**Bot ({ts})**: {m['text']}  _(sentiment: {sentiment})_")
+
+    user_input = st.text_area("Write to the bot", height=120, key="chat_input")
+    col1, col2 = st.columns([1,3])
+    with col1:
+        if st.button("Send"):
+            if not user_input.strip():
+                st.warning("Please type a message.")
+            else:
+                sentiment = analyze_sentiment(user_input)
+                is_crisis = detect_crisis(user_input, sentiment)
+                save_chat("user", user_input, sentiment)
+                bot_reply = generate_bot_reply(user_input)
+                # augment reply if crisis
+                if is_crisis:
+                    bot_reply += ("\n\n⚠️ I detect serious distress. If you are in danger please contact local emergency services or the nearest helpline now. "
+                                  "In India, you may call 9152987821 (Vandrevala) or 080-256-XXXX for campus support.")
+                save_chat("bot", bot_reply, analyze_sentiment(bot_reply))
+                st.rerun()
+
+
+    with col2:
+        st.markdown("**Quick prompts**")
+        if st.button("I'm stressed about exams"):
+            st.session_state.chat_input = "I am stressed about exams and can't focus."
+            st.experimental_rerun()
+        if st.button("I feel lonely"):
+            st.session_state.chat_input = "I feel lonely and don't want to bother anyone."
+            st.experimental_rerun()
+        if st.button("Need breathing exercise"):
+            st.session_state.chat_input = "I want a breathing exercise to calm down."
+            st.experimental_rerun()
+
+# -------------------------
+# Mood Tracker
+# -------------------------
+with tabs[2]:
+    st.header("Mood Tracker 📊")
+    st.markdown("Log how you're feeling. Visualize trends over time. Small, consistent tracking helps detect early changes.")
+
+    # mood input
+    colA, colB = st.columns([2,1])
     with colA:
-        mood = st.selectbox("How are you feeling right now?", ["Very Positive 😀", "Positive 🙂", "Neutral 😐", "Anxious 😟", "Very Negative 😢"])
-        note = st.text_area("Optional note (private)")
-        if st.button("Log today's mood"):
+        mood = st.selectbox("Today's mood", ["Very Positive 😀", "Positive 🙂", "Neutral 😐", "Anxious 😟", "Very Negative 😢"])
+        note = st.text_area("Short note (optional, private)", max_chars=300)
+    with colB:
+        if st.button("Log Mood"):
             mapping = {"Very Positive 😀":2, "Positive 🙂":1, "Neutral 😐":0, "Anxious 😟":-1, "Very Negative 😢":-2}
             score = mapping[mood]
             save_mood(mood, score, note or "")
-            st.success("Mood logged — small steps matter.")
-    with colB:
-        if st.button("Download summary for clinician"):
-            # create a plain text summary and offer as download
-            df = pd.read_sql_query("SELECT * FROM moods ORDER BY id DESC LIMIT 50", conn)
-            lines = ["MindCare — brief summary\n", f"Generated: {datetime.utcnow().isoformat()}\n", "Recent mood entries:\n"]
-            for _, row in df.iterrows():
-                lines.append(f"{row['ts']} | {row['mood_label']} | note: {row['note']}\n")
-            txt = "\n".join(lines)
-            st.download_button("Download summary (.txt)", txt, file_name="mindcare_summary.txt", mime="text/plain")
+            add_points("Log mood", 5)
+            st.success("Mood logged. Thank you — small actions add up!")
+            st.experimental_rerun()
 
-    # show chart
-    dfm = get_moods_df()
-    if not dfm.empty:
-        dfm["ts_date"] = pd.to_datetime(dfm["ts"]).dt.date
-        fig = px.line(dfm, x="ts_date", y="score", markers=True, title="Mood trend (score -2..2)")
+    # show recent moods chart
+    moods = get_moods()
+    if moods:
+        df = pd.DataFrame(moods)
+        df["ts_date"] = pd.to_datetime(df["ts"]).dt.date
+        fig = px.line(df, x="ts_date", y="score", markers=True, title="Mood trend (score -2..2)")
+        fig.update_layout(yaxis=dict(dtick=1))
+        st.plotly_chart(fig, use_container_width=True)
+        st.table(df.tail(6)[["ts","mood","note"]])
+    else:
+        st.info("No moods logged yet. Encourage users to log daily.")
+
+# -------------------------
+# Self-care
+# -------------------------
+with tabs[3]:
+    st.header("Self-care exercises & micro-tasks 🧘")
+    st.markdown("Short practices to reduce stress and build resilience. Earn wellness points for completing activities.")
+
+    if st.button("3-minute breathing exercise (4-4-4)"):
+        add_points("Breathing exercise", 10)
+        st.success("Nice! +10 points — try the breathing cycle: inhale 4s, hold 4s, exhale 4s. Repeat 6 times.")
+
+    if st.button("1-minute grounding"):
+        add_points("Grounding", 5)
+        st.success("Nice! +5 points — look around, name 5 things you can see, 4 you can touch.")
+
+    if st.button("Write a gratitude sentence"):
+        add_points("Gratitude", 5)
+        st.success("Nice! +5 points — being grateful boosts mood.")
+
+    st.markdown("**Wellness Points**: " + str(get_points_total()))
+
+# -------------------------
+# Dashboard
+# -------------------------
+with tabs[4]:
+    st.header("Student Dashboard — Snapshot")
+    st.markdown("Personalized view: mood trend, recent chat sentiment, wellness points")
+
+    # mood trend (recent)
+    moods = get_moods()
+    if moods:
+        df = pd.DataFrame(moods)
+        df["ts_date"] = pd.to_datetime(df["ts"]).dt.date
+        fig = px.bar(df, x="ts_date", y="score", title="Mood bars (recent entries)", labels={"score":"mood score"})
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("No mood data yet — encourage daily check-ins.")
+        st.info("No mood data yet — use the Mood Tracker tab")
 
-# ---------------------------
-# Tab: Resources & Connect
-# ---------------------------
-with tabs[2]:
-    st.header("Resources & Connect")
-    st.markdown("**Trusted resources**")
-    st.markdown("- WHO mental health: https://www.who.int/health-topics/mental-health")
-    st.markdown("- Crisis hotlines: see sidebar")
+    # recent chat sentiment summary
+    chats = get_chats(30)
+    if chats:
+        chat_df = pd.DataFrame(chats)
+        chat_df = chat_df[chat_df["role"]=="user"]
+        avg_sent = chat_df["sentiment"].mean()
+        st.metric("Average recent sentiment", f"{avg_sent:.2f}")
+        st.table(chat_df.tail(6)[["ts","text","sentiment"]])
+    else:
+        st.info("No chat history yet.")
 
-    st.markdown("---")
-    st.subheader("Connect with local professionals (demo directory)")
-    # demo mock directory — in real deployment you'd query an API / database
-    providers = [
-        {"name":"City Mental Health Clinic", "phone":"+91-11-1234-5678", "email":"clinic@example.com", "address":"Nearby St, City"},
-        {"name":"University Counseling Centre", "phone":"+91-11-9999-0000", "email":"counsel@example.edu", "address":"Campus Rd"},
-        {"name":"NGO Helpline", "phone":"+91-80-1111-2222", "email":"ngo@example.org", "address":"Community Center"}
-    ]
-    for p in providers:
-        st.markdown(f"**{p['name']}**  \nAddress: {p['address']}  \nPhone: {p['phone']}  \nEmail: {p['email']}")
-        # mailto booking button:
-        mailto = f"mailto:{p['email']}?subject=Appointment%20Request%20from%20MindCare%20User&body=Hello%2C%0A%0AI%20would%20like%20to%20request%20an%20appointment.%20Please%20advise%20availability."
-        if st.button(f"Request appointment — {p['name']}"):
-            # either open mailto or send via SMTP if configured
-            if st.secrets.get("smtp_user") or os.getenv("SMTP_USER"):
-                # ask user for consent to share summary
-                consent = st.checkbox("I consent to share my summary with this provider (demo)", key=f"consent_{p['name']}")
-                if consent:
-                    # build summary and send via SMTP
-                    df = pd.read_sql_query("SELECT * FROM moods ORDER BY id DESC LIMIT 50", conn)
-                    body_lines = [f"Appointment request from a MindCare user.\n\nRecent moods:\n"]
-                    for _, r in df.iterrows():
-                        body_lines.append(f"{r['ts']} | {r['mood_label']} | note: {r['note']}\n")
-                    success, msg = send_email_via_smtp(p['email'], "MindCare: Appointment request", "\n".join(body_lines))
-                    if success:
-                        st.success("Appointment request sent (via configured SMTP).")
-                    else:
-                        st.error(f"Could not send: {msg}")
-                else:
-                    st.info("Please give consent to share your summary.")
-            else:
-                # fallback: open mailto
-                st.markdown(f"[Open email client to request appointment]({mailto})")
+    st.markdown("**Total wellness points:** " + str(get_points_total()))
 
-    st.markdown("---")
-    st.markdown("If you plan to connect with professionals, always ensure you consent to share personal notes. Data privacy is critical.")
-
-# Footer
+# Footer / note
 st.markdown("---")
-st.caption("Demo prototype for educational use. Not a substitute for professional care.")
-
-
-
-
-
-
-
+st.caption("Prototype for demo only — this is not a clinical tool. For real emergencies contact local services.")
