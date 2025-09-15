@@ -103,7 +103,6 @@ elif page == "Chatbot":
             st.write("👉 If you want, you can also check the **Resources** page for professional support.")
 
 # psychiatrist_db_module.py
-import streamlit as st
 import urllib.parse
 
 # ---------------------------
@@ -345,5 +344,6 @@ def show_psychiatrist_search_ui():
 if __name__ == "__main__":
     st.title("Psychiatrist / Mental Health Resources Module (Demo)")
     show_psychiatrist_search_ui()
+
 
 
