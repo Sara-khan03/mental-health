@@ -187,7 +187,23 @@ with tabs[0]:
 # -------------------------
 # Chatbot tab
 # -------------------- Chatbot Page --------------------
-# -------------------- Chatbot Page --------------------
+import streamlit as st
+
+# Sidebar navigation
+st.sidebar.title("Mental Health App")
+page = st.sidebar.radio("Navigate", ["Home", "Resources", "Chatbot"])
+
+# -------------------- Home --------------------
+if page == "Home":
+    st.title("🏠 Welcome")
+    st.write("This is the home page.")
+
+# -------------------- Resources --------------------
+elif page == "Resources":
+    st.title("📚 Resources")
+    st.write("Here are some helpful mental health resources.")
+
+# -------------------- Chatbot --------------------
 elif page == "Chatbot":
     st.title("💬 Mental Health Chatbot")
 
@@ -311,5 +327,6 @@ with tabs[4]:
 # Footer / note
 st.markdown("---")
 st.caption("Prototype for demo only — this is not a clinical tool. For real emergencies contact local services.")
+
 
 
