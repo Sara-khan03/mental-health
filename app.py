@@ -186,53 +186,44 @@ with tabs[0]:
 
 # -------------------------
 # Chatbot tab
-# -------------------------
-with tabs[1]:
-    st.header("Chat with MindCare Bot 🤖")
-    st.markdown("Share how you feel or ask for coping strategies. Crisis detection is enabled.")
+# -------------------- Chatbot Page --------------------
+elif page == "Chatbot":
+    st.title("💬 Mental Health Chatbot")
 
-    # load previous chat
-    chats = get_chats(200)
-    if chats:
-        for m in chats[-20:]:
-            role = m["role"]
-            sentiment = m["sentiment"]
-            ts = m["ts"][:19].replace("T"," ")
-            if role == "user":
-                st.markdown(f"**You ({ts})**: {m['text']}")
-            else:
-                st.markdown(f"**Bot ({ts})**: {m['text']}  _(sentiment: {sentiment})_")
+    # Initialize session state safely
+    if "chat_input" not in st.session_state:
+        st.session_state["chat_input"] = ""
 
-    user_input = st.text_area("Write to the bot", height=120, key="chat_input")
-    col1, col2 = st.columns([1,3])
+    st.write("Select a quick prompt or type how you are feeling:")
+
+    col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("Send"):
-            if not user_input.strip():
-                st.warning("Please type a message.")
-            else:
-                sentiment = analyze_sentiment(user_input)
-                is_crisis = detect_crisis(user_input, sentiment)
-                save_chat("user", user_input, sentiment)
-                bot_reply = generate_bot_reply(user_input)
-                # augment reply if crisis
-                if is_crisis:
-                    bot_reply += ("\n\n⚠️ I detect serious distress. If you are in danger please contact local emergency services or the nearest helpline now. "
-                                  "In India, you may call 9152987821 (Vandrevala) or 080-256-XXXX for campus support.")
-                save_chat("bot", bot_reply, analyze_sentiment(bot_reply))
-                st.rerun()
-
-
+        if st.button("😟 Stressed about exams"):
+            st.session_state["chat_input"] = "I am stressed about exams and can't focus."
     with col2:
-        st.markdown("**Quick prompts**")
-        if st.button("I'm stressed about exams"):
-            st.session_state.chat_input = "I am stressed about exams and can't focus."
-            st.experimental_rerun()
-        if st.button("I feel lonely"):
-            st.session_state.chat_input = "I feel lonely and don't want to bother anyone."
-            st.experimental_rerun()
-        if st.button("Need breathing exercise"):
-            st.session_state.chat_input = "I want a breathing exercise to calm down."
-            st.experimental_rerun()
+        if st.button("😊 Feeling happy"):
+            st.session_state["chat_input"] = "I am feeling very happy and motivated today!"
+    with col3:
+        if st.button("😔 Feeling lonely"):
+            st.session_state["chat_input"] = "I am feeling lonely and need some advice."
+
+    # Text input linked to session state
+    user_input = st.text_input("Explain how you are feeling:", key="chat_input")
+
+    # Show chatbot response
+    if user_input:
+        st.write(f"🧑‍⚕️ You said: {user_input}")
+
+        # Simple response logic (replace with your NLP/chatbot model later)
+        if "stressed" in user_input.lower():
+            st.info("💡 Tip: Take a 5-minute break, practice deep breathing, and try to focus on one task at a time.")
+        elif "happy" in user_input.lower():
+            st.success("🌟 That's amazing! Keep doing what makes you happy and spread positivity.")
+        elif "lonely" in user_input.lower():
+            st.warning("🤝 You’re not alone. Try calling a close friend or joining a community activity.")
+        else:
+            st.info("🧠 Remember, it's okay to talk about your feelings. Keep expressing yourself.")
+
 
 # -------------------------
 # Mood Tracker
@@ -321,3 +312,4 @@ with tabs[4]:
 # Footer / note
 st.markdown("---")
 st.caption("Prototype for demo only — this is not a clinical tool. For real emergencies contact local services.")
+
