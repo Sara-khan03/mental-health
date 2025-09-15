@@ -187,6 +187,7 @@ with tabs[0]:
 # -------------------------
 # Chatbot tab
 # -------------------- Chatbot Page --------------------
+# -------------------- Chatbot Page --------------------
 elif page == "Chatbot":
     st.title("💬 Mental Health Chatbot")
 
@@ -214,7 +215,6 @@ elif page == "Chatbot":
     if user_input:
         st.write(f"🧑‍⚕️ You said: {user_input}")
 
-        # Simple response logic (replace with your NLP/chatbot model later)
         if "stressed" in user_input.lower():
             st.info("💡 Tip: Take a 5-minute break, practice deep breathing, and try to focus on one task at a time.")
         elif "happy" in user_input.lower():
@@ -223,7 +223,6 @@ elif page == "Chatbot":
             st.warning("🤝 You’re not alone. Try calling a close friend or joining a community activity.")
         else:
             st.info("🧠 Remember, it's okay to talk about your feelings. Keep expressing yourself.")
-
 
 # -------------------------
 # Mood Tracker
@@ -312,4 +311,5 @@ with tabs[4]:
 # Footer / note
 st.markdown("---")
 st.caption("Prototype for demo only — this is not a clinical tool. For real emergencies contact local services.")
+
 
